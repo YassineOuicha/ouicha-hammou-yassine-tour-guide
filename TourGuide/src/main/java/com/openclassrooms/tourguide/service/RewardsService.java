@@ -30,7 +30,7 @@ public class RewardsService {
 	private final RewardCentral rewardsCentral;
 
 	// threadPool
-	private static final int THREAD_POOL_SIZE = 10;
+	private static final int THREAD_POOL_SIZE = 50;
 	private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
 
