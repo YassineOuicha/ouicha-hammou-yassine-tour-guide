@@ -4,6 +4,9 @@ import java.util.ArrayList;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -25,7 +28,12 @@ public class RewardsService {
 	private int attractionProximityRange = 200;
 	private final GpsUtil gpsUtil;
 	private final RewardCentral rewardsCentral;
-	
+
+	// threadPool
+	private static final int THREAD_POOL_SIZE = 10;
+	private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+
+
 	public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
 		this.gpsUtil = gpsUtil;
 		this.rewardsCentral = rewardCentral;
@@ -42,25 +50,39 @@ public class RewardsService {
 	public void calculateRewards(User user) {
 		List<VisitedLocation> userLocations = new ArrayList<>(user.getVisitedLocations());
 		List<Attraction> attractions = gpsUtil.getAttractions();
-
+		List<Future<?>> futures = new ArrayList<>();
 
 		for (VisitedLocation visitedLocation : userLocations) {
 
-			List<Attraction> nearbyAttractions = attractions.parallelStream()
+			List<Attraction> nearbyAttractions = attractions.stream()
 					.filter(attraction -> getDistance(attraction, visitedLocation.location) <= proximityBuffer)
 					.toList();
 
-			nearbyAttractions.parallelStream().forEach(attraction -> {
-				if (user.getUserRewards().stream()
-						.noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))) {
+			for (Attraction attraction : nearbyAttractions) {
 
-					int rewardPoints = getRewardPoints(attraction, user);
-					synchronized (user) {
-						user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
+				Future<?> future = executor.submit(() -> {
+					if (user.getUserRewards().stream()
+							.noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))) {
+
+						int rewardPoints = getRewardPoints(attraction, user);
+						synchronized (user) {
+							user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
+						}
 					}
-				}
-			});
+				});
+
+				futures.add(future);
+			}
 		}
+
+		for (Future<?> future : futures) {
+			try {
+				future.get();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+
 	}
 
 	public boolean isWithinAttractionProximity(Attraction attraction, Location location) {

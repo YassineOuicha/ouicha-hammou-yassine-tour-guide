@@ -19,6 +19,9 @@ import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
 import tripPricer.Provider;
 import tripPricer.TripPricer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @Service
 public class TourGuideService {
@@ -28,6 +31,9 @@ public class TourGuideService {
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
 	boolean testMode = true;
+
+	private static final int THREAD_POOL_SIZE = 10;
+	private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
 		this.gpsUtil = gpsUtil;
@@ -84,6 +90,24 @@ public class TourGuideService {
 		rewardsService.calculateRewards(user);
 		return visitedLocation;
 	}
+
+	public void calculateRewardsForAllUsers(List<User> users) {
+
+		List<Future<?>> futures = new ArrayList<>();
+
+		for (User user : users) {
+			futures.add(executor.submit(() -> rewardsService.calculateRewards(user)));
+		}
+
+		for (Future<?> future : futures) {
+			try {
+				future.get();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
 
 	public List<NearByAttractionDTO> getNearByAttractions(User user, VisitedLocation visitedLocation) {
 		List<Attraction> allAttractions = gpsUtil.getAttractions();
