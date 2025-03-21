@@ -43,23 +43,24 @@ public class RewardsService {
 		List<VisitedLocation> userLocations = new ArrayList<>(user.getVisitedLocations());
 		List<Attraction> attractions = gpsUtil.getAttractions();
 
-		Set<String> rewardedAttractions = user.getUserRewards().stream()
-				.map(reward -> reward.attraction.attractionName)
-				.collect(Collectors.toSet());
-
-		List<UserReward> newRewards = new ArrayList<>();
 
 		for (VisitedLocation visitedLocation : userLocations) {
-			List<Attraction> nearbyAttractions = attractions.stream()
-					.filter(attraction -> !rewardedAttractions.contains(attraction.attractionName))
-					.filter(attraction -> nearAttraction(visitedLocation, attraction))
+
+			List<Attraction> nearbyAttractions = attractions.parallelStream()
+					.filter(attraction -> getDistance(attraction, visitedLocation.location) <= proximityBuffer)
 					.toList();
 
-			for (Attraction attraction : nearbyAttractions) {
-				newRewards.add(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
-			}
+			nearbyAttractions.parallelStream().forEach(attraction -> {
+				if (user.getUserRewards().stream()
+						.noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))) {
+
+					int rewardPoints = getRewardPoints(attraction, user);
+					synchronized (user) {
+						user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
+					}
+				}
+			});
 		}
-		user.getUserRewards().addAll(newRewards);
 	}
 
 	public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
