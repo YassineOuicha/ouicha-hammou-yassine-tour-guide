@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="RewardCentral">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/TourGuide/libs/RewardCentral.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$PROJECT_DIR$/TourGuide/libs/RewardCentral.jar!/" />
+    </SOURCES>
+  </library>
+</component>

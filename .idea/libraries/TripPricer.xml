@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="TripPricer">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/TourGuide/libs/TripPricer.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$PROJECT_DIR$/TourGuide/libs/TripPricer.jar!/" />
+    </SOURCES>
+  </library>
+</component>
