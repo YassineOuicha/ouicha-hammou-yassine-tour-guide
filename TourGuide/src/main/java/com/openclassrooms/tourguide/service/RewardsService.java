@@ -1,9 +1,10 @@
 package com.openclassrooms.tourguide.service;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import gpsUtil.GpsUtil;
@@ -42,34 +43,31 @@ public class RewardsService {
 		List<VisitedLocation> userLocations = new ArrayList<>(user.getVisitedLocations());
 		List<Attraction> attractions = gpsUtil.getAttractions();
 
-		// A set to collect the new rewards to be added after iterations
+		Set<String> rewardedAttractions = user.getUserRewards().stream()
+				.map(reward -> reward.attraction.attractionName)
+				.collect(Collectors.toSet());
+
 		List<UserReward> newRewards = new ArrayList<>();
 
-		for(VisitedLocation visitedLocation : userLocations) {
-			for(Attraction attraction : attractions) {
-				List<UserReward> existingRewards = new ArrayList<>(user.getUserRewards());
+		for (VisitedLocation visitedLocation : userLocations) {
+			List<Attraction> nearbyAttractions = attractions.stream()
+					.filter(attraction -> !rewardedAttractions.contains(attraction.attractionName))
+					.filter(attraction -> nearAttraction(visitedLocation, attraction))
+					.toList();
 
-				// We check if the user has already earned rewards for this attraction
-				if (existingRewards.stream().noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))) {
-					if (nearAttraction(visitedLocation, attraction)) {
-						newRewards.add(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
-					}
-				}
+			for (Attraction attraction : nearbyAttractions) {
+				newRewards.add(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
 			}
 		}
-
-		// We add all the new rewards after iteration completed
-		for(UserReward reward : newRewards) {
-				user.addUserReward(reward);
-		}
+		user.getUserRewards().addAll(newRewards);
 	}
-	
+
 	public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
 		return getDistance(attraction, location) > attractionProximityRange ? false : true;
 	}
 	
 	private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
-		return getDistance(attraction, visitedLocation.location) > proximityBuffer ? false : true;
+		return getDistance(attraction, visitedLocation.location) <= proximityBuffer;
 	}
 	
 	public int getRewardPoints(Attraction attraction, User user) {
