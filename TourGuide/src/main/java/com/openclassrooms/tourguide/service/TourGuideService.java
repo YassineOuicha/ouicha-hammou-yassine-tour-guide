@@ -8,6 +8,7 @@ import com.openclassrooms.tourguide.user.UserReward;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -101,13 +102,12 @@ public class TourGuideService {
 
 		for (Future<?> future : futures) {
 			try {
-				future.get();
+				future.get(60, TimeUnit.SECONDS);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
 	}
-
 
 	public List<NearByAttractionDTO> getNearByAttractions(User user, VisitedLocation visitedLocation) {
 		List<Attraction> allAttractions = gpsUtil.getAttractions();
