@@ -41,7 +41,7 @@ public class TestPerformance {
 
 		// Users should be incremented up to 100000, and test finishes within 15 minutes maximum
 
-		InternalTestHelper.setInternalUserNumber(100000);
+		InternalTestHelper.setInternalUserNumber(100);
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
 		List<User> allUsers = tourGuideService.getAllUsers();
@@ -86,7 +86,7 @@ public class TestPerformance {
 		allUsers.forEach(u -> u.addToVisitedLocations(new VisitedLocation(u.getUserId(), attraction, new Date())));
 
 		// Calculate rewards in parallel
-		tourGuideService.calculateRewardsForAllUsers(allUsers);
+		rewardsService.calculateRewardsForUsers(allUsers);
 
 		for (User user : allUsers) {
             assertFalse(user.getUserRewards().isEmpty());

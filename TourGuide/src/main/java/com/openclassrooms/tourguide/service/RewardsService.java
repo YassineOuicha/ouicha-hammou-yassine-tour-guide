@@ -1,12 +1,8 @@
 package com.openclassrooms.tourguide.service;
 
 import java.util.ArrayList;
-
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
-
 import org.springframework.stereotype.Service;
 import gpsUtil.GpsUtil;
 import gpsUtil.location.Attraction;
@@ -28,7 +24,7 @@ public class RewardsService {
 	private final RewardCentral rewardsCentral;
 
 	// threadPool
-	private static final int THREAD_POOL_SIZE = Math.max(32, Runtime.getRuntime().availableProcessors() * 2);
+	private static final int THREAD_POOL_SIZE = Math.max(50, Runtime.getRuntime().availableProcessors() * 2);
 	private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
 	// cache to store calculated distances
@@ -101,7 +97,7 @@ public class RewardsService {
 		}
 
 		try {
-			latch.await(1, TimeUnit.MINUTES);
+			latch.await(30, TimeUnit.MINUTES);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}
@@ -131,8 +127,7 @@ public class RewardsService {
                                + Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon1 - lon2));
 
         double nauticalMiles = 60 * Math.toDegrees(angle);
-        double statuteMiles = STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
-        return statuteMiles;
+        return STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
 	}
 
 	public List<Attraction> getAttractions() {
