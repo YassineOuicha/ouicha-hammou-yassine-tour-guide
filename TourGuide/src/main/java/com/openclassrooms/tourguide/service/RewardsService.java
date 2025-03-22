@@ -4,6 +4,7 @@ import java.util.ArrayList;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -30,9 +31,19 @@ public class RewardsService {
 	private final RewardCentral rewardsCentral;
 
 	// threadPool
-	private static final int THREAD_POOL_SIZE = 50;
+	private static final int THREAD_POOL_SIZE = Math.max(32, Runtime.getRuntime().availableProcessors() * 2);
 	private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
+	// cache to store calculated distances
+	private final ConcurrentHashMap<String, Double> distanceCache = new ConcurrentHashMap<>();
+
+	// cache to store rewardPoints already computed
+	private final ConcurrentHashMap<String, Integer> rewardPointsCache = new ConcurrentHashMap<>();
+
+	public double getCachedDistance(Location loc1, Location loc2) {
+		String key = String.format("%.4f,%.4f_%.4f,%.4f", loc1.latitude, loc1.longitude, loc2.latitude, loc2.longitude);
+		return distanceCache.computeIfAbsent(key, k -> getDistance(loc1, loc2));
+	}
 
 	public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
 		this.gpsUtil = gpsUtil;
@@ -55,7 +66,7 @@ public class RewardsService {
 		for (VisitedLocation visitedLocation : userLocations) {
 
 			List<Attraction> nearbyAttractions = attractions.stream()
-					.filter(attraction -> getDistance(attraction, visitedLocation.location) <= proximityBuffer)
+					.filter(attraction -> getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer)
 					.toList();
 
 			for (Attraction attraction : nearbyAttractions) {
@@ -94,7 +105,8 @@ public class RewardsService {
 	}
 	
 	public int getRewardPoints(Attraction attraction, User user) {
-		return rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId());
+		String key = attraction.attractionId + "_" + user.getUserId();
+		return rewardPointsCache.computeIfAbsent(key, k -> rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId()));
 	}
 	
 	public double getDistance(Location loc1, Location loc2) {
