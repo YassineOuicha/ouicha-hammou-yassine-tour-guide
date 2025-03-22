@@ -8,7 +8,7 @@ import com.openclassrooms.tourguide.user.UserReward;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -20,9 +20,6 @@ import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
 import tripPricer.Provider;
 import tripPricer.TripPricer;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 @Service
 public class TourGuideService {
@@ -36,10 +33,14 @@ public class TourGuideService {
 	private static final int THREAD_POOL_SIZE = Math.max(32, Runtime.getRuntime().availableProcessors() * 2);
 	private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
+	// Cache for attractions list
+	private final List<Attraction> attractions;
+
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
 		this.gpsUtil = gpsUtil;
 		this.rewardsService = rewardsService;
-		
+		this.attractions = rewardsService.getAttractions();
+
 		Locale.setDefault(Locale.US);
 
 		if (testMode) {
@@ -67,7 +68,7 @@ public class TourGuideService {
 	}
 
 	public List<User> getAllUsers() {
-		return internalUserMap.values().stream().collect(Collectors.toList());
+		return new ArrayList<>(internalUserMap.values());
 	}
 
 	public void addUser(User user) {
@@ -88,56 +89,42 @@ public class TourGuideService {
 	public VisitedLocation trackUserLocation(User user) {
 		VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
 		user.addToVisitedLocations(visitedLocation);
-		rewardsService.calculateRewards(user);
 		return visitedLocation;
 	}
 
+	public List<CompletableFuture<VisitedLocation>> trackUserLocationsParallel(List<User> users) {
+		return users.stream()
+				.map(user -> CompletableFuture.supplyAsync(() -> trackUserLocation(user), executor))
+				.collect(Collectors.toList());
+	}
+
 	public void calculateRewardsForAllUsers(List<User> users) {
-
-		List<Future<?>> futures = new ArrayList<>();
-
-		for (User user : users) {
-			futures.add(executor.submit(() -> rewardsService.calculateRewards(user)));
-		}
-
-		for (Future<?> future : futures) {
-			try {
-				future.get(60, TimeUnit.SECONDS);
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-		}
+		rewardsService.calculateRewardsForUsers(users);
 	}
 
 	public List<NearByAttractionDTO> getNearByAttractions(User user, VisitedLocation visitedLocation) {
-		List<Attraction> allAttractions = gpsUtil.getAttractions();
+
 		double userLat = visitedLocation.location.latitude;
 		double userLong = visitedLocation.location.longitude;
 
-		List<NearByAttractionDTO> attractionDTOs = new ArrayList<>();
-		for(Attraction attraction: allAttractions){
+		return attractions.stream()
+				.map(attraction -> {
+					double distance = rewardsService.getCachedDistance(attraction, visitedLocation.location);
+					int rewardPoints = rewardsService.getRewardPoints(attraction, user);
 
-			double distance = rewardsService.getDistance(attraction, visitedLocation.location);
-			int rewardPoints = rewardsService.getRewardPoints(attraction, user);
-
-			NearByAttractionDTO dto = new NearByAttractionDTO(
-					attraction.attractionName,
-					attraction.latitude,
-					attraction.longitude,
-					userLat,
-					userLong,
-					distance,
-					rewardPoints
-			);
-
-			attractionDTOs.add(dto);
-		}
-
-		List<NearByAttractionDTO> fiveClosestAttractions = attractionDTOs.stream()
+					return new NearByAttractionDTO(
+							attraction.attractionName,
+							attraction.latitude,
+							attraction.longitude,
+							userLat,
+							userLong,
+							distance,
+							rewardPoints
+					);
+				})
 				.sorted(Comparator.comparingDouble(NearByAttractionDTO::getDistance))
-				.limit(5).toList();
-
-		return fiveClosestAttractions;
+				.limit(5)
+				.collect(Collectors.toList());
 	}
 
 	private void addShutDownHook() {
@@ -156,7 +143,7 @@ public class TourGuideService {
 	private static final String tripPricerApiKey = "test-server-api-key";
 	// Database connection will be used for external users, but for testing purposes
 	// internal users are provided and stored in memory
-	private final Map<String, User> internalUserMap = new HashMap<>();
+	private final Map<String, User> internalUserMap = new ConcurrentHashMap<>();;
 
 	private void initializeInternalUsers() {
 		IntStream.range(0, InternalTestHelper.getInternalUserNumber()).forEach(i -> {

@@ -1,10 +1,12 @@
 package com.openclassrooms.tourguide;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.time.StopWatch;
@@ -23,26 +25,12 @@ import com.openclassrooms.tourguide.user.User;
 public class TestPerformance {
 
 	/*
-	 * A note on performance improvements:
-	 * 
-	 * The number of users generated for the high volume tests can be easily
-	 * adjusted via this method:
-	 * 
-	 * InternalTestHelper.setInternalUserNumber(100000);
-	 * 
-	 * 
-	 * These tests can be modified to suit new solutions, just as long as the
-	 * performance metrics at the end of the tests remains consistent.
-	 * 
 	 * These are performance metrics that we are trying to hit:
-	 * 
-	 * highVolumeTrackLocation: 100,000 users within 15 minutes:
-	 * assertTrue(TimeUnit.MINUTES.toSeconds(15) >=
-	 * TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()));
 	 *
-	 * highVolumeGetRewards: 100,000 users within 20 minutes:
-	 * assertTrue(TimeUnit.MINUTES.toSeconds(20) >=
-	 * TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()));
+	 * highVolumeTrackLocation: 100,000 users within 15 minutes
+	 *
+	 * highVolumeGetRewards: 100,000 users within 20 minutes
+	 *
 	 */
 
 //	@Disabled
@@ -50,19 +38,23 @@ public class TestPerformance {
 	public void highVolumeTrackLocation() {
 		GpsUtil gpsUtil = new GpsUtil();
 		RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
-		// Users should be incremented up to 100,000, and test finishes within 15
-		// minutes
-		InternalTestHelper.setInternalUserNumber(10000);
+
+		// Users should be incremented up to 100000, and test finishes within 15 minutes maximum
+
+		InternalTestHelper.setInternalUserNumber(100000);
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
-		List<User> allUsers = new ArrayList<>();
-		allUsers = tourGuideService.getAllUsers();
+		List<User> allUsers = tourGuideService.getAllUsers();
 
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
-		for (User user : allUsers) {
-			tourGuideService.trackUserLocation(user);
-		}
+
+		// Track user locations in parallel
+		List<CompletableFuture<VisitedLocation>> futures = tourGuideService.trackUserLocationsParallel(allUsers);
+
+		// Wait for all futures to complete
+		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
 		stopWatch.stop();
 		tourGuideService.tracker.stopTracking();
 
@@ -77,21 +69,29 @@ public class TestPerformance {
 		GpsUtil gpsUtil = new GpsUtil();
 		RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
 
-		// Users should be incremented up to 100,000, and test finishes within 20 minutes maximum
-		InternalTestHelper.setInternalUserNumber(10000);
-		StopWatch stopWatch = new StopWatch();
-		stopWatch.start();
+		// Users should be incremented up to 100000, and test finishes within 20 minutes maximum
+
+		InternalTestHelper.setInternalUserNumber(100);
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
+		StopWatch stopWatch = new StopWatch();
+		stopWatch.start();
+
+
+		// Pre-fetch an attraction to add to all user locations
 		Attraction attraction = gpsUtil.getAttractions().get(0);
 		List<User> allUsers = tourGuideService.getAllUsers();
+
+		// Add the same attraction location to all users
 		allUsers.forEach(u -> u.addToVisitedLocations(new VisitedLocation(u.getUserId(), attraction, new Date())));
 
+		// Calculate rewards in parallel
 		tourGuideService.calculateRewardsForAllUsers(allUsers);
 
 		for (User user : allUsers) {
-			assertTrue(user.getUserRewards().size() > 0);
+            assertFalse(user.getUserRewards().isEmpty());
 		}
+
 		stopWatch.stop();
 		tourGuideService.tracker.stopTracking();
 

@@ -4,10 +4,7 @@ import java.util.ArrayList;
 
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -40,6 +37,9 @@ public class RewardsService {
 	// cache to store rewardPoints already computed
 	private final ConcurrentHashMap<String, Integer> rewardPointsCache = new ConcurrentHashMap<>();
 
+	// cache to store attractions
+	private List<Attraction> attractions;
+
 	public double getCachedDistance(Location loc1, Location loc2) {
 		String key = String.format("%.4f,%.4f_%.4f,%.4f", loc1.latitude, loc1.longitude, loc2.latitude, loc2.longitude);
 		return distanceCache.computeIfAbsent(key, k -> getDistance(loc1, loc2));
@@ -48,6 +48,9 @@ public class RewardsService {
 	public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
 		this.gpsUtil = gpsUtil;
 		this.rewardsCentral = rewardCentral;
+
+		// Preload attractions to avoid fetching them multiple times
+		this.attractions = gpsUtil.getAttractions();
 	}
 	
 	public void setProximityBuffer(int proximityBuffer) {
@@ -60,53 +63,62 @@ public class RewardsService {
 
 	public void calculateRewards(User user) {
 		List<VisitedLocation> userLocations = new ArrayList<>(user.getVisitedLocations());
-		List<Attraction> attractions = gpsUtil.getAttractions();
-		List<Future<?>> futures = new ArrayList<>();
 
 		for (VisitedLocation visitedLocation : userLocations) {
+			for (Attraction attraction : attractions) {
+				if (user.getUserRewards().stream()
+						.noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))
+						&& getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer) {
 
-			List<Attraction> nearbyAttractions = attractions.stream()
-					.filter(attraction -> getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer)
-					.toList();
+					int rewardPoints = getRewardPoints(attraction, user);
+					user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
+				}
+			}
+		}
+	}
 
-			for (Attraction attraction : nearbyAttractions) {
+	public void calculateRewardsForUsers(List<User> users) {
+		CountDownLatch latch = new CountDownLatch(users.size());
 
-				Future<?> future = executor.submit(() -> {
-					if (user.getUserRewards().stream()
-							.noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))) {
+		// Process users in batches to avoid creating too many tasks
+		int batchSize = Math.max(1, users.size() / THREAD_POOL_SIZE);
 
-						int rewardPoints = getRewardPoints(attraction, user);
-						synchronized (user) {
-							user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
-						}
+		for (int i = 0; i < users.size(); i += batchSize) {
+			int end = Math.min(i + batchSize, users.size());
+			List<User> batch = users.subList(i, end);
+
+			executor.submit(() -> {
+				try {
+					for (User user : batch) {
+						calculateRewards(user);
 					}
-				});
-
-				futures.add(future);
-			}
+				} finally {
+					for (int j = 0; j < batch.size(); j++) {
+						latch.countDown();
+					}
+				}
+			});
 		}
 
-		for (Future<?> future : futures) {
-			try {
-				future.get();
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
+		try {
+			latch.await(1, TimeUnit.MINUTES);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 		}
-
 	}
 
 	public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
-		return getDistance(attraction, location) > attractionProximityRange ? false : true;
+		return getCachedDistance(attraction, location) <= attractionProximityRange;
 	}
 	
 	private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
-		return getDistance(attraction, visitedLocation.location) <= proximityBuffer;
+		return getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer;
 	}
 	
 	public int getRewardPoints(Attraction attraction, User user) {
 		String key = attraction.attractionId + "_" + user.getUserId();
-		return rewardPointsCache.computeIfAbsent(key, k -> rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId()));
+		return rewardPointsCache.computeIfAbsent(key, k ->
+				rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId()));
 	}
 	
 	public double getDistance(Location loc1, Location loc2) {
@@ -121,6 +133,10 @@ public class RewardsService {
         double nauticalMiles = 60 * Math.toDegrees(angle);
         double statuteMiles = STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
         return statuteMiles;
+	}
+
+	public List<Attraction> getAttractions() {
+		return attractions;
 	}
 
 }
