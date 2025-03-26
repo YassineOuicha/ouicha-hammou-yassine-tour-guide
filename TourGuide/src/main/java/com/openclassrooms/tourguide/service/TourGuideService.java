@@ -30,15 +30,19 @@ public class TourGuideService {
 	public final Tracker tracker;
 	boolean testMode = true;
 
+	// Thread pool for parallel processing
+	// Uses max(50, 2 * available processors) to ensure efficient parallel execution
 	private static final int THREAD_POOL_SIZE = Math.max(50, Runtime.getRuntime().availableProcessors() * 2);
 	private final ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
-	// Cache for attractions list
+	// Preloaded attractions to avoid repeated fetching
 	private final List<Attraction> attractions;
 
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
 		this.gpsUtil = gpsUtil;
 		this.rewardsService = rewardsService;
+
+		// Preload attractions to avoid repeated network calls
 		this.attractions = rewardsService.getAttractions();
 
 		Locale.setDefault(Locale.US);
@@ -92,26 +96,35 @@ public class TourGuideService {
 		return visitedLocation;
 	}
 
+	// Parallel tracking of user locations
 	public List<CompletableFuture<VisitedLocation>> trackUserLocationsParallel(List<User> users) {
+		// We use Java's CompletableFuture for non-blocking parallel location tracking
 		return users.stream()
 				.map(user -> CompletableFuture.supplyAsync(() -> trackUserLocation(user), executor))
-				.collect(Collectors.toList());
+				.toList();
 	}
 
+	// Calculate rewards for all users in parallel
 	public void calculateRewardsForAllUsers(List<User> users) {
+		// Delegate to RewardsService's parallel rewards calculation
 		rewardsService.calculateRewardsForUsers(users);
 	}
 
+	// Enhanced method to get nearby attractions with the requested information as a DTO (Data Transfer Object)
 	public List<NearByAttractionDTO> getNearByAttractions(User user, VisitedLocation visitedLocation) {
 
 		double userLat = visitedLocation.location.latitude;
 		double userLong = visitedLocation.location.longitude;
 
+		// Stream based processing with sorting and limiting
 		return attractions.stream()
 				.map(attraction -> {
+					// we use cached distance calculation from RewardsService
 					double distance = rewardsService.getCachedDistance(attraction, visitedLocation.location);
+					// we use cached reward points from RewardsService
 					int rewardPoints = rewardsService.getRewardPoints(attraction, user);
 
+					// Returns a NearByAttractionDTO with this attraction's information
 					return new NearByAttractionDTO(
 							attraction.attractionName,
 							attraction.latitude,
@@ -122,9 +135,12 @@ public class TourGuideService {
 							rewardPoints
 					);
 				})
+				// Then we sort by distance
 				.sorted(Comparator.comparingDouble(NearByAttractionDTO::getDistance))
+				// We limit the result to top 5 NearByAttractionDTOs
 				.limit(5)
-				.collect(Collectors.toList());
+				// We convert the stream to a list
+				.toList();
 	}
 
 	private void addShutDownHook() {
@@ -143,6 +159,7 @@ public class TourGuideService {
 	private static final String tripPricerApiKey = "test-server-api-key";
 	// Database connection will be used for external users, but for testing purposes
 	// internal users are provided and stored in memory
+	// improved thread-safety via ConcurrentHashMap
 	private final Map<String, User> internalUserMap = new ConcurrentHashMap<>();;
 
 	private void initializeInternalUsers() {
