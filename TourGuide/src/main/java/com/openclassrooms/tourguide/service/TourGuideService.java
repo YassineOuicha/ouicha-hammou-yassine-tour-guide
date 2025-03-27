@@ -104,11 +104,6 @@ public class TourGuideService {
 				.toList();
 	}
 
-	// Calculate rewards for all users in parallel
-	public void calculateRewardsForAllUsers(List<User> users) {
-		// Delegate to RewardsService's parallel rewards calculation
-		rewardsService.calculateRewardsForUsers(users);
-	}
 
 	// Enhanced method to get nearby attractions with the requested information as a DTO (Data Transfer Object)
 	public List<NearByAttractionDTO> getNearByAttractions(User user, VisitedLocation visitedLocation) {

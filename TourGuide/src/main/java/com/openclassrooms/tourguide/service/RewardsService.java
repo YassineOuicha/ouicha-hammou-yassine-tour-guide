@@ -37,7 +37,7 @@ public class RewardsService {
 	private final ConcurrentHashMap<String, Integer> rewardPointsCache = new ConcurrentHashMap<>();
 
 	// Preloaded attractions list to avoid repeated fetching
-	private List<Attraction> attractions;
+	private final List<Attraction> attractions;
 
 	// Method to retrieve cached distance or calculate the distance if not present
 	public double getCachedDistance(Location loc1, Location loc2) {
@@ -110,6 +110,7 @@ public class RewardsService {
 					}
 				} finally {
 					// Count down latch for each processed user
+					// to liberate the ressources
 					for (int j = 0; j < batch.size(); j++) {
 						latch.countDown();
 					}
