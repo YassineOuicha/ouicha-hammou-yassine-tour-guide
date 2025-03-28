@@ -14,15 +14,14 @@ import com.openclassrooms.tourguide.user.UserReward;
 
 @Service
 public class RewardsService {
-	// Conversion factor for distance calculation
     private static final double STATUTE_MILES_PER_NAUTICAL_MILE = 1.15077945;
 
-	// Proximity settings for attractions
     private int defaultProximityBuffer = 10;
 	private int proximityBuffer = defaultProximityBuffer;
 	private int attractionProximityRange = 200;
 	private final GpsUtil gpsUtil;
 	private final RewardCentral rewardsCentral;
+	boolean testMode = true;
 
 	// Thread pool for parallel processing
 	// Uses max(50, 2 * available processors) to ensure efficient parallel execution
@@ -42,7 +41,9 @@ public class RewardsService {
 	// Method to retrieve cached distance or calculate the distance if not present
 	public double getCachedDistance(Location loc1, Location loc2) {
 		// Generate a unique key for location pair to use as cache key
-		String key = String.format("%.4f,%.4f_%.4f,%.4f", loc1.latitude, loc1.longitude, loc2.latitude, loc2.longitude);
+		String key = String.format("%.9f,%.9f_%.9f,%.9f", loc1.latitude, loc1.longitude, loc2.latitude, loc2.longitude);
+
+//		String key = loc1.latitude + "," + loc1.longitude + "_" + loc2.latitude + "," + loc2.longitude;
 
 		// We use computeIfAbsent to calculate distance only if not in cache
 		return distanceCache.computeIfAbsent(key, k -> getDistance(loc1, loc2));
@@ -56,38 +57,30 @@ public class RewardsService {
 		// Preload attractions to avoid repeated network calls
 		this.attractions = gpsUtil.getAttractions();
 	}
-	
-	public void setProximityBuffer(int proximityBuffer) {
-		this.proximityBuffer = proximityBuffer;
-	}
-	
-	public void setDefaultProximityBuffer() {
-		proximityBuffer = defaultProximityBuffer;
-	}
 
 	// Reward calculation method optimized for parallel processing
 	public void calculateRewards(User user) {
 		List<VisitedLocation> userLocations = new ArrayList<>(user.getVisitedLocations());
 
-		// Iterate through user locations and attractions with optimized checking
-		for (VisitedLocation visitedLocation : userLocations) {
-			for (Attraction attraction : attractions) {
+		if (testMode) {
+			attractions.forEach(attraction -> processAttraction(user, userLocations, attraction));
+		} else {
+			attractions.parallelStream().forEach(attraction -> processAttraction(user, userLocations, attraction));
+		}
+	}
 
-				// We check if a reward for this attraction hasn't been given
-				// We use stream filter for efficient checking
-				if (user.getUserRewards().stream()
-						.noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))
-						&& getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer) {
-
-					// Get cached reward points
-					int rewardPoints = getRewardPoints(attraction, user);
-
-					// Add user reward
-					user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
+	private void processAttraction(User user, List<VisitedLocation> userLocations, Attraction attraction) {
+		if (user.getUserRewards().stream().noneMatch(r ->
+				r.attraction.attractionName.equals(attraction.attractionName))) {
+			for (VisitedLocation visitedLocation : userLocations) {
+				if (getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer) {
+					user.addUserReward(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
+					break;
 				}
 			}
 		}
 	}
+
 
 	// Parallel rewards calculation for multiple users
 	public void calculateRewardsForUsers(List<User> users) {
@@ -126,16 +119,6 @@ public class RewardsService {
 		}
 	}
 
-	// Cached method for checking attraction proximity
-	public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
-		return getCachedDistance(attraction, location) <= attractionProximityRange;
-	}
-
-	// Cached method for checking proximity to a specific attraction
-	private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
-		return getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer;
-	}
-
 	// Cached method for getting reward points
 	public int getRewardPoints(Attraction attraction, User user) {
 		// A unique key for reward points cache
@@ -160,9 +143,28 @@ public class RewardsService {
         return STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
 	}
 
+	// Cached method for checking attraction proximity
+	public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
+		return getCachedDistance(attraction, location) <= attractionProximityRange;
+	}
+
+	// Cached method for checking proximity to a specific attraction
+	private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
+		return getCachedDistance(attraction, visitedLocation.location) <= proximityBuffer;
+	}
+
+
 	// Getter for preloaded attractions
 	public List<Attraction> getAttractions() {
 		return attractions;
+	}
+
+	public void setProximityBuffer(int proximityBuffer) {
+		this.proximityBuffer = proximityBuffer;
+	}
+
+	public void setDefaultProximityBuffer() {
+		proximityBuffer = defaultProximityBuffer;
 	}
 
 }

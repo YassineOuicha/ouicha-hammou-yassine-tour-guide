@@ -37,7 +37,7 @@ public class TestPerformance {
 
 		// Users should be incremented up to 100000, and test finishes within 15 minutes maximum
 
-		InternalTestHelper.setInternalUserNumber(100);
+		InternalTestHelper.setInternalUserNumber(100000);
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
 		List<User> allUsers = tourGuideService.getAllUsers();
@@ -46,10 +46,7 @@ public class TestPerformance {
 		stopWatch.start();
 
 		// Track user locations in parallel
-		List<CompletableFuture<VisitedLocation>> futures = tourGuideService.trackUserLocationsParallel(allUsers);
-
-		// Wait for all futures to complete
-		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+		tourGuideService.trackAllUserLocations(allUsers);
 
 		stopWatch.stop();
 		tourGuideService.tracker.stopTracking();
