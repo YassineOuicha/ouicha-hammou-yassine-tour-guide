@@ -1,6 +1,11 @@
 package com.openclassrooms.tourguide.dto;
 
 
+
+/**
+ * Data Transfer Object (DTO) representing a nearby attraction with contextual information
+ * about the user's position, the attraction information, and calculated reward points.
+ */
 public class NearByAttractionDTO {
 
     private String attractionName;
