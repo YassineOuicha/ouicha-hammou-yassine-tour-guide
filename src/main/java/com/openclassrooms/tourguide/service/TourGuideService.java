@@ -9,7 +9,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +36,12 @@ public class TourGuideService {
 
 	// Preloaded attractions to avoid repeated fetching
 	private final List<Attraction> attractions;
+
+	private boolean disableAutoRewardCalculation = false;
+
+	public void setDisableAutoRewardCalculation(boolean disableAutoRewardCalculation) {
+		this.disableAutoRewardCalculation = disableAutoRewardCalculation;
+	}
 
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
 		this.gpsUtil = gpsUtil;
@@ -93,6 +98,15 @@ public class TourGuideService {
 	public VisitedLocation trackUserLocation(User user) {
 		VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
 		user.addToVisitedLocations(visitedLocation);
+
+		if (!disableAutoRewardCalculation) {
+			if (testMode) {
+				rewardsService.calculateRewards(user);
+			} else {
+				CompletableFuture.runAsync(() -> rewardsService.calculateRewards(user), executor);
+			}
+		}
+
 		return visitedLocation;
 	}
 
@@ -104,10 +118,13 @@ public class TourGuideService {
 				.toList();
 	}
 
-	// Calculate rewards for all users in parallel
-	public void calculateRewardsForAllUsers(List<User> users) {
-		// Delegate to RewardsService's parallel rewards calculation
-		rewardsService.calculateRewardsForUsers(users);
+	// Track user locations in parallel
+	public void trackAllUserLocations(List<User> users) {
+		List<CompletableFuture<VisitedLocation>> futures = users.stream()
+				.map(user -> CompletableFuture.supplyAsync(() -> trackUserLocation(user), executor))
+				.toList();
+
+		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 	}
 
 	// Enhanced method to get nearby attractions with the requested information as a DTO (Data Transfer Object)
